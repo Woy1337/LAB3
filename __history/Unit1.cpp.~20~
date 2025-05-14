@@ -1,0 +1,246 @@
+//---------------------------------------------------------------------------
+
+#include <vcl.h>
+#pragma hdrstop
+#include <math.h>
+#include "Unit1.h"
+//---------------------------------------------------------------------------
+#pragma package(smart_init)
+#pragma resource "*.dfm"
+TForm1 *Form1;
+
+bool hasOctFunction = false; // Флаг для проверки наличия восьмиричной функции
+bool hasDecimalPoint = false; // Флаг для проверки наличия десятичной точки
+//---------------------------------------------------------------------------
+__fastcall TForm1::TForm1(TComponent* Owner)
+	: TForm(Owner)
+{
+}
+//---------------------------------------------------------------------------
+
+void __fastcall TForm1::ButtonEqualClick(TObject *Sender)
+{
+	AnsiString expression = Edit1->Text; // Получаем текст из поля ввода
+	if (!expression.IsEmpty()) { // Проверяем, что выражение не пустое
+
+		AnsiString lastCharacter = AnsiLastChar(expression); // Получаем последний символ выражения
+		if (hasDecimalPoint) { expression += '0'; } // Если есть десятичная точка, добавляем '0'
+		if (hasOctFunction) { // Если есть восьмиричная функция
+			if (lastCharacter == '(') {
+				expression += '0'; // Если последний символ - '(', добавляем '0'
+			}
+			expression += ')'; // Закрываем скобку
+		}
+		if (lastCharacter == '+' || lastCharacter == '-') expression += '0';
+		else if (lastCharacter == '/' || lastCharacter == '*') expression += '1';
+
+		// Вычисление восьмиричной
+		int position = 1;
+		while (position) {
+			position = expression.AnsiPos("o"); // Находим позицию 'o' в выражении
+			if (position) {
+				AnsiString prefix = expression.SubString(0, position - 1); // Получаем префикс
+				AnsiString suffix = expression.SubString(expression.AnsiPos(")") + 1, expression.Length()); // Получаем суффикс
+				int decimalNumber;
+				AnsiString decimalNumberString = expression.SubString(expression.AnsiPos("(") + 1, expression.AnsiPos(")") - expression.AnsiPos("(") - 1); // Получаем строку с десятичным числом
+				if (TryStrToInt(decimalNumberString, decimalNumber)) { // Пробуем преобразовать строку в целое число
+					AnsiString octNumber = "";
+					for ( ; decimalNumber; decimalNumber/=8) { // Преобразуем десятичное число в восьмиричное
+						 octNumber = (AnsiString)char('0'+decimalNumber%8) + octNumber;
+					}
+					expression = prefix + octNumber + suffix; // Обновляем выражение
+				}
+			}
+			hasOctFunction = false; // Сбрасываем флаг восьмиричной функции
+			hasDecimalPoint = false; // Сбрасываем флаг десятичной точки
+		}
+
+		// Обработка минусов
+		expression = StringReplace(expression, "--", "+", TReplaceFlags() << rfReplaceAll); // Заменяем '--' на '+'
+		for (position = 2; position <= expression.Length(); position++) { // Обрабатываем минусы перед числами
+			if (expression[position] == '-' && std::isdigit(expression[position - 1])) {
+				expression = expression.SubString(0, position - 1) + "+-" + expression.SubString(position + 1, expression.Length());
+				position++;
+			}
+		}
+
+		// Обработка операций
+		AnsiString currentNumber = ""; // Текущее число
+		char lastOperator = '+'; // Последний оператор
+		double sum = 0; // Сумма
+		double product = 1; // Произведение
+		for (position = 1; position <= expression.Length(); position++) { // Проходим по выражению
+			if (std::isdigit(expression[position]) || expression[position] == '-' || expression[position] == ',') {
+				currentNumber += expression[position]; // Собираем текущее число
+			}
+			else { // Обрабатываем оператор
+				if ((expression[position] == '*' || expression[position] == '/') && lastOperator == '+') {
+					product = StrToFloat(currentNumber) * product; // Умножаем
+				}
+				else if ((expression[position] == '*' || expression[position] == '/') && lastOperator == '*') {
+					product = StrToFloat(currentNumber) * product; // Умножаем
+				}
+				else if ((expression[position] == '*' || expression[position] == '/') && lastOperator == '/') {
+					product = product / StrToFloat(currentNumber); // Делим
+				}
+				else { // Обрабатываем сложение и вычитание
+					if (lastOperator == '*') {
+						product = StrToFloat(currentNumber) * product; // Умножаем
+						sum += product; // Добавляем к сумме
+						product = 1; // Сбрасываем произведение
+					}
+					else if (lastOperator == '/') {
+						product = product / StrToFloat(currentNumber); // Делим
+						sum += product; // Добавляем к сумме
+						product = 1; // Сбрасываем произведение
+					}
+					else {
+						sum += StrToFloat(currentNumber); // Добавляем к сумме
+					}
+				}
+				currentNumber = ""; // Сбрасываем текущее число
+				lastOperator = expression[position]; // Обновляем последний оператор
+			}
+		}
+
+		// Обработка последней операции
+		if (lastOperator == '*') {
+			product = StrToFloat(currentNumber) * product; // Умножаем
+			sum += product; // Добавляем к сумме
+			product = 1; // Сбрасываем произведение
+		}
+		else if (lastOperator == '/') {
+			product = product / StrToFloat(currentNumber); // Делим
+			sum += product; // Добавляем к сумме
+			product = 1; // Сбрасываем произведение
+		}
+		else {
+			sum += StrToFloat(currentNumber); // Добавляем к сумме
+		}
+
+		Edit1->Text = sum; // Выводим результат в поле ввода
+	}
+}
+//---------------------------------------------------------------------------
+
+void __fastcall TForm1::NumberPress(TObject *Sender)
+{
+	TButton * button = dynamic_cast<TButton*>(Sender); // Приводим Sender к типу TButton
+	Edit1->Text += button->Caption; // Добавляем текст кнопки в поле ввода
+}
+//---------------------------------------------------------------------------
+
+void __fastcall TForm1::OperationPress(TObject *Sender)
+{
+	AnsiString expression = Edit1->Text; // Получаем текущее выражение
+	AnsiString lastCharacter = AnsiLastChar(expression); // Получаем последний символ
+	TButton * button = dynamic_cast<TButton*>(Sender); // Приводим Sender к типу TButton
+	if (!expression.IsEmpty()) { // Проверяем, что выражение не пустое
+		if (lastCharacter == '+' || lastCharacter == '-' || lastCharacter == '/' || lastCharacter == '*') {
+			expression.SetLength(expression.Length() - 1); // Удаляем последний оператор
+			Edit1->Text = expression; // Обновляем поле ввода
+		}
+		if (hasDecimalPoint && expression[expression.Length()] == ',') {
+			expression += '0'; // Если есть десятичная точка, добавляем '0'
+			Edit1->Text = expression; // Обновляем поле ввода
+			hasDecimalPoint = false; // Сбрасываем флаг
+		}
+		if (hasOctFunction) { // Если есть восьмиричная функция
+			if (lastCharacter == '(') {
+				if (button->Caption != '-') {
+					expression += '0'; // Если последний символ - '(', добавляем '0'
+				}
+				else {
+					Edit1->Text += button->Caption; // Если последний символ - '-', добавляем его
+					return;
+				}
+			}
+			expression += ')'; // Закрываем скобку
+			hasOctFunction = false; // Сбрасываем флаг
+			Edit1->Text = expression; // Обновляем поле ввода
+		}
+
+		Edit1->Text += button->Caption; // Добавляем текст кнопки в поле ввода
+	}
+	else { // Если выражение пустое
+		TButton * button = dynamic_cast<TButton*>(Sender); // Приводим Sender к типу TButton
+		if (button->Caption == '-') {
+			Edit1->Text += "0-"; // Если нажата кнопка '-', добавляем '0-'
+		}
+	}
+
+	if (hasDecimalPoint) hasDecimalPoint = false; // Сбрасываем флаг десятичной точки
+}
+//---------------------------------------------------------------------------
+
+void __fastcall TForm1::BackspacePress(TObject *Sender)
+{
+	AnsiString expression = Edit1->Text; // Получаем текущее выражение
+	AnsiString lastCharacter = AnsiLastChar(expression); // Получаем последний символ
+	if (lastCharacter == ')') {
+		hasOctFunction = true; // Если последний символ - ')', устанавливаем флаг восьмиричной функции
+	}
+	if (lastCharacter == ',') {
+		hasDecimalPoint = false; // Если последний символ - ',', сбрасываем флаг десятичной точки
+	}
+	expression.SetLength(expression.Length() - 1); // Удаляем последний символ
+	Edit1->Text = expression; // Обновляем поле ввода
+}
+//---------------------------------------------------------------------------
+
+void __fastcall TForm1::ClearAll(TObject *Sender)
+{
+	Edit1->Text=""; // Очищаем поле ввода
+	hasOctFunction = false; // Сбрасываем флаг восьмиричной функции
+	hasDecimalPoint = false; // Сбрасываем флаг десятичной точки
+}
+//---------------------------------------------------------------------------
+
+void __fastcall TForm1::OctPress(TObject *Sender)
+{
+	AnsiString expression = Edit1->Text; // Получаем текущее выражение
+	AnsiString lastCharacter = AnsiLastChar(expression); // Получаем последний символ
+	if (expression.IsEmpty() || lastCharacter == '+' || lastCharacter == '-' || lastCharacter == '/' || lastCharacter == '*') {
+		expression += "oct("; // Если выражение пустое или последний символ - оператор, добавляем 'oct('
+		hasOctFunction = true; // Устанавливаем флаг восьмиричной функции
+	}
+	else {
+		if (hasDecimalPoint) {
+			expression += "0*oct("; // Если есть десятичная точка, добавляем '0*oct('
+			hasDecimalPoint = false; // Сбрасываем флаг
+		}
+		else if (hasOctFunction) {
+			if (lastCharacter == '(') {
+				expression += '0'; // Если последний символ - '(', добавляем '0'
+			}
+			expression += ")*oct("; // Закрываем скобку и добавляем 'oct('
+			Edit1->Text = expression; // Обновляем поле ввода
+		}
+		else expression += "*oct("; // Добавляем '*oct('
+		has OctFunction = true; // Устанавливаем флаг восьмиричной функции
+	}
+	Edit1->Text = expression; // Обновляем поле ввода
+}
+//---------------------------------------------------------------------------
+
+void __fastcall TForm1::CommaPress(TObject *Sender)
+{
+	AnsiString expression = Edit1->Text; // Получаем текущее выражение
+	AnsiString lastCharacter = AnsiLastChar(expression); // Получаем последний символ
+	if (!hasDecimalPoint) { // Проверяем, есть ли уже десятичная точка
+		if (expression.IsEmpty() || lastCharacter == '+' || lastCharacter == '-' || lastCharacter == '/' || lastCharacter == '*' || lastCharacter == '(') {
+			expression += "0,"; // Если выражение пустое или последний символ - оператор, добавляем '0,'
+			Edit1->Text = expression; // Обновляем поле ввода
+		}
+		if (hasOctFunction) {
+			return; // Если есть восьмиричная функция, ничего не делаем
+		}
+		else if (lastCharacter != ',') {
+			expression += ','; // Добавляем десятичную точку, если её нет
+		}
+		Edit1->Text = expression; // Обновляем поле ввода
+		hasDecimalPoint = true; // Устанавливаем флаг наличия десятичной точки
+	}
+}
+//---------------------------------------------------------------------------
+
