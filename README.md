@@ -1,1 +1,2 @@
-C:/Users/Finish/Desktop/калькулятор
+# LAB3
+Калькулятор
